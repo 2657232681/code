@@ -1,0 +1,203 @@
+{% extends "layout.html" %}
+{% block content %}
+    <div class="row">
+        <div class="col-md-6 grid-margin stretch-panel">
+            <div class="panel">
+                <div class="panel-body">
+                    <div style="width: 100%;height:500px">
+                        <img src="#" style="width:auto;height: 490px; max-width: 550px;display: none;" id="image-show"
+                             alt="">
+                        <br>
+                        <input type="hidden" name="image" id="input-image">
+                    </div>
+                    <p class=" mb-1 btn btn-info " id="play">摄像头拍照</p>
+                    <b class="btn btn-primary" onclick="document.getElementById('select-img').click()">选择图片</b>
+                    <input type="file" id="select-img" style="display: none">
+                    <b class="btn btn-primary disabled" id="start">开始识别</b>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6 grid-margin stretch-panel">
+            <div class="panel">
+                <div class="panel-body">
+                    <div style="width: 100%;height:535px">
+                        <img src="#" style="width:auto;height: 490px; max-width: 490px;display: none;" id="predict"
+                             alt="">
+                        <br>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+    </div>
+    <div class="row grid-margin stretch-panel" id="ocr-result">
+    </div>
+
+    <!-- sample modal content -->
+    <div id="myModal" class="modal fade" tabindex="-1" role="dialog"
+         aria-labelledby="myModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h4 class="modal-title" id="myModalLabel">摄像头拍照</h4>
+                    <button type="button" class="close" data-dismiss="modal"
+                            aria-hidden="true">×
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <video style="width: 100%;height: 100%" src="#" id="camera-video"></video>
+                    <canvas style="display: none;"/>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light"
+                            data-dismiss="modal">取消
+                    </button>
+                    <button type="button" class="btn btn-primary" id="camera">拍照</button>
+                </div>
+            </div><!-- /.modal-content -->
+        </div><!-- /.modal-dialog -->
+    </div><!-- /.modal -->
+
+{% endblock %}
+{% block script %}
+    <script>
+
+
+        $(function () {
+            $("#play").click(function () {
+                $("#myModal").modal("show");
+                var video = document.getElementById("camera-video");
+                if (navigator.mediaDevices.getUserMedia) {
+                    navigator.mediaDevices.getUserMedia({video: true})
+                        .then(function (stream) {
+                            video.srcObject = stream;
+                            video.play();
+                        })
+                        .catch(function (err0r) {
+                            console.log("Something went wrong!");
+                        });
+                }
+                $("#camera").click(function () {
+                    var canvas = document.querySelector("canvas");
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    var ctx = canvas.getContext('2d');
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    var dataURL = canvas.toDataURL('image/png');
+                    $("#image-show").attr("src", dataURL).show();
+                    $("#input-image").val(dataURL)
+                    $("#myModal").modal("hide");
+                    $("#start").removeClass("disabled")
+                    // 关闭摄像头
+                    video.srcObject.getTracks().forEach(function (track) {
+                        track.stop();
+                    });
+                });
+            });
+            $("#sidebar > ul > li:nth-child(3)").addClass("active");
+            $("#select-img").change(function () {
+                if ($(this).val() != "") {
+                }
+                if ($(this).val().split(".").pop() == "jpg" || $(this).val().split(".").pop() == "png" || $(this).val().split(".").pop() == "jpeg") {
+                    var file = this.files[0];
+                    var fr = new FileReader();
+
+                    fr.onload = function (e) {
+                        var result = e.target.result;
+                        $("#image-show").attr("src", result);
+                        $("#image-show").show();
+                        $("#start").removeClass("disabled")
+                        $("#input-image").val(result)
+                    }
+                    fr.readAsDataURL(file);  // 将文件读取为Data URL
+                } else {
+                    $.noty({
+                        text: "请上传jpg、png、jpeg格式的图片",
+                        layout: 'topRight',
+                        type: 'alert-danger'
+                    });
+                    return;
+                }
+
+            });
+
+            $("#start").click(function () {
+                    $(this).addClass("disabled")
+                    // 添加一个旋转的图标
+
+                    $("#ocr-result").html("");
+                    $("#predict").hide()
+                    $.ajax({
+                        url: "/nets",
+                        type: "POST",
+                        data: {
+                            "image": $("#input-image").val(),
+                        },
+                        success: function (data) {
+                            if (data.code == 200) {
+                                $("#predict").attr("src", data.data.target).show()
+                                $("#start").removeClass("disabled")
+
+                                var html = ""
+
+                                for (var x of data.data.result) {
+                                    if (x.detail) {
+                                        var detail = `
+                                    <p>名称:${x.detail.name}</p>
+                                    <p>种类:${x.detail.classes}</p>
+<p>拉丁名： ${x.detail.latin_name}</p><p>目： ${x.detail.head}</p>
+<p>科： ${x.detail.family}</p><p>属： ${x.detail.gender}</p>
+<p  >食性： ${x.detail.feeding_habits}</p>
+<p>分布： ${x.detail.detail}</p>
+                                  `
+                                    } else {
+                                        var detail = "暂无相关信息"
+                                    }
+
+
+                                    html += `
+                                  
+                                <div class="col-md-4">
+                                    <!-- VISIT CHART -->
+                                    <div class="panel">
+                                        <div class="panel-heading">
+                                            <h3 class="panel-title">有 <strong> ${x.conf}</strong>的可能性是 <strong>${x.label}</strong> </h3>
+                            
+                                        </div>
+                                        <div class="panel-body">
+                                            <p>${detail}</p>
+                                        </div>
+                                    </div>
+                            
+                                </div>
+                            
+                            `
+                                }
+
+
+                                $("#ocr-result").html(html);
+
+
+                            } else {
+                                $.noty({
+                                    text: data.msg,
+                                    layout: 'topRight',
+                                    type: 'alert-danger'
+                                });
+
+                                $("#start").removeClass("disabled")
+                                $("#start").children("i").remove()
+                            }
+                        }
+                    })
+
+
+                }
+            )
+        })
+
+
+    </script>
+{% endblock %}
